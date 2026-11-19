@@ -1,0 +1,12 @@
+# Dočasné soubory LibreOffice / OpenOffice
+.~lock.*#
+*.tmp
+*.bak
+
+# Python mezipaměť
+__pycache__/
+*.py[cod]
+
+# Automatické archivy záloh (ZIP soubory nenahráváme do gitu, aby nezvětšovaly repozitář)
+ZAL/*.zip
+!ZAL/.gitkeep
