@@ -1,6 +1,6 @@
 # Systém evidence a fakturace táborů – Šťastný statek
 
-Komplexní databázový a evidenční systém postavený na LibreOffice Base (embedded HSQLDB), LibreOffice Calc a Pythonu.
+Komplexní databázový a evidenční systém postavený na LibreOffice Base (vestavěný Firebird), LibreOffice Calc a Pythonu.
 
 ## 📁 Struktura projektu
 
