@@ -134,7 +134,7 @@ CREATE TABLE "Faktury" (
   "Variabilni_Symbol" VARCHAR(20),
   "Poznamka"          VARCHAR(500),
   CONSTRAINT "FK_Fakt_Prih" FOREIGN KEY ("ID_Prihlasky")
-    REFERENCES "Prihlasky"("ID_Prihlasky") ON DELETE CASCADE
+    REFERENCES "Prihlasky"("ID_Prihlasky") -- Ochrana: faktury se nesmí mazat kaskádově, aby nedošlo ke ztrátě účetní historie!
 )
 
 -- BLOK 9 / 9 ─────────────────────────────────────────────────

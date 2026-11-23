@@ -20,19 +20,26 @@ echo " Spouštím zálohování projektu Šťastný statek..."
 echo " Čas: $(date '+%d.%m.%Y %H:%M:%S')"
 echo "=========================================================="
 
-# Kontrola existence klíčových souborů
-if [ ! -f "Šťastný_statek.odb" ]; then
-    echo "CHYBA: Soubor Šťastný_statek.odb nebyl nalezen v ${BASE_DIR}!"
+# Detekce názvu databázového souboru (s diakritikou i bez)
+DB_FILE="Šťastný_statek.odb"
+if [ ! -f "${DB_FILE}" ]; then
+    DB_FILE="Stastny_statek.odb"
+fi
+
+if [ ! -f "${DB_FILE}" ]; then
+    echo "CHYBA: Soubor Šťastný_statek.odb ani Stastny_statek.odb nebyl nalezen v ${BASE_DIR}!"
     exit 1
 fi
 
+echo " Zálohuji databázi: ${DB_FILE}"
+
 # Vytvoření ZIP archivu se všemi klíčovými komponentami:
-# 1. Hlavní databáze Šťastný_statek.odb
+# 1. Hlavní databáze (.odb)
 # 2. Složka se šablonami Sablony/
 # 3. Složka s vygenerovanými dokumenty Dokumenty/
 # 4. Schéma a SQL skripty
 zip -r "${DEST_ARCHIVE}" \
-    "Šťastný_statek.odb" \
+    "${DB_FILE}" \
     "Sablony" \
     "Dokumenty" \
     "schema.sql" \
@@ -41,11 +48,11 @@ zip -r "${DEST_ARCHIVE}" \
 
 # Zároveň vytvoříme přímou kopii aktuálního ODB do ZAL/latest/
 mkdir -p "${ZAL_DIR}/latest"
-cp -p "Šťastný_statek.odb" "${ZAL_DIR}/latest/Šťastný_statek.odb"
+cp -p "${DB_FILE}" "${ZAL_DIR}/latest/${DB_FILE}"
 
 ARCHIVE_SIZE=$(du -h "${DEST_ARCHIVE}" | cut -f1)
 
 echo " Záloha úspěšně vytvořena!"
 echo " Archiv: ${DEST_ARCHIVE} (${ARCHIVE_SIZE})"
-echo " Aktuální kopie: ${ZAL_DIR}/latest/Šťastný_statek.odb"
+echo " Aktuální kopie: ${ZAL_DIR}/latest/${DB_FILE}"
 echo "=========================================================="
