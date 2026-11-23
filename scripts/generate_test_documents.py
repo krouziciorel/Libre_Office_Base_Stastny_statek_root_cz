@@ -221,6 +221,7 @@ def generate_prihlaska(child):
         "PRIHL_DATUM_DNES": "15. 1. 2027",
         "PRIHL_AKCE_NAZEV": TURNUS["nazev"],
         "PRIHL_AKCE_TERMIN": TURNUS["termin"],
+        "PRIHL_ROK": "2027",
         "PRIHL_ZAKAZNIK_N": "☒",
         "PRIHL_ZAKAZNIK_S": "☐",
         "PRIHL_CENA_NOVA": TURNUS["cena_celkem"],
@@ -233,6 +234,8 @@ def generate_prihlaska(child):
     
     with zipfile.ZipFile(tpl, "r") as zin, zipfile.ZipFile(out_odt, "w") as zout:
         for item in zin.infolist():
+            if item.filename == "Pictures/QR_Platba.png":
+                continue # Přeskočíme starý QR obrázek, nový zapíšeme na konci
             data = zin.read(item.filename)
             if item.filename == "content.xml":
                 xml = data.decode("utf-8")
@@ -301,6 +304,8 @@ def generate_faktura(child, typ="ZALOHOVA"):
     
     with zipfile.ZipFile(tpl, "r") as zin, zipfile.ZipFile(out_ods, "w") as zout:
         for item in zin.infolist():
+            if item.filename == "Pictures/QR_Platba.png":
+                continue # Přeskočíme starý QR obrázek, nový zapíšeme na konci
             data = zin.read(item.filename)
             if item.filename == "META-INF/manifest.xml":
                 manifest = data.decode("utf-8")
@@ -455,6 +460,8 @@ def generate_turnus_overview():
 
     with zipfile.ZipFile(tpl, "r") as zin, zipfile.ZipFile(out_odt, "w") as zout:
         for item in zin.infolist():
+            if item.filename == "Pictures/QR_Platba.png":
+                continue # Přeskočíme starý QR obrázek, nový zapíšeme na konci
             data = zin.read(item.filename)
             if item.filename == "content.xml":
                 xml = data.decode("utf-8")

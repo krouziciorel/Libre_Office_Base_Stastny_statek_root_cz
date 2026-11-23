@@ -12,11 +12,11 @@ INSERT INTO "Dodavatele"
   ("Nazev_Firmy","Jmeno","Prijmeni","ICO","Ulice_CP","Mesto","PSC",
    "Telefon","Email","Web","Banka","Cislo_Uctu","IBAN")
 VALUES
-  ('Šťastný statek','Jana','Procházková','12345678',
-   'Statková 12','Mladá Boleslav','293 01',
+  ('Luděk Šťastný - Šťastný statek','Luděk','Šťastný','74461028',
+   'Provodín 211','Provodín','470 01',
    '+420 777 123 456','info@stastnystatek.cz','www.stastnystatek.cz',
-   'Česká spořitelna','1234567890/0800',
-   'CZ65 0800 0000 0012 3456 7890')
+   'Česká spořitelna','1652608083/0800',
+   'CZ65 0800 0000 0016 5260 8083')
 
 -- ── ZÁKAZNÍCI / RODIČE ──────────────────────────────────────
 INSERT INTO "Zakaznici"
@@ -141,25 +141,25 @@ INSERT INTO "Prihlasky"
 VALUES (2,5,NULL,'2026-06-21','POTVRZEN','00022026',2500.00)
 
 -- Dětský víkend – Adam Novák (ID_Akce=3, ID_Zakaznika=1, ID_Ditete=1)
--- Variabilní symbol: DDMMYYYY (nar. 14.05.2012) + 2026 = 140520122026
+-- Variabilní symbol: DDMMRRRR (nar. 14.05. + turnus 2026 = 14052026, 8 číslic pro SPAYD)
 INSERT INTO "Prihlasky"
   ("ID_Akce","ID_Zakaznika","ID_Ditete","Datum_Prihlasky",
    "Stav","Variabilni_Symbol","Cena_Celkem")
-VALUES (3,1,1,'2026-06-20','POTVRZEN','140520122026',3200.00)
+VALUES (3,1,1,'2026-06-20','POTVRZEN','14052026',3200.00)
 
 -- Letní tábor – Tereza Batelková (ID_Akce=4, ID_Zakaznika=2, ID_Ditete=2)
--- Variabilní symbol: DDMMYYYY (nar. 22.04.2010) + 2026 = 220420102026
+-- Variabilní symbol: DDMMRRRR (nar. 22.04. + turnus 2026 = 22042026, 8 číslic pro SPAYD)
 INSERT INTO "Prihlasky"
   ("ID_Akce","ID_Zakaznika","ID_Ditete","Datum_Prihlasky",
    "Stav","Variabilni_Symbol","Cena_Celkem")
-VALUES (4,2,2,'2026-06-15','POTVRZEN','220420102026',9800.00)
+VALUES (4,2,2,'2026-06-15','POTVRZEN','22042026',9800.00)
 
 -- Podzimní prázdniny – Markéta Brázdová (ID_Akce=5, ID_Zakaznika=3, ID_Ditete=3)
--- Variabilní symbol: DDMMYYYY (nar. 03.09.2011) + 2026 = 030920112026
+-- Variabilní symbol: DDMMRRRR (nar. 03.09. + turnus 2026 = 03092026, 8 číslic pro SPAYD)
 INSERT INTO "Prihlasky"
   ("ID_Akce","ID_Zakaznika","ID_Ditete","Datum_Prihlasky",
    "Stav","Variabilni_Symbol","Cena_Celkem")
-VALUES (5,3,3,'2026-06-22','PRIHLASEN','030920112026',4500.00)
+VALUES (5,3,3,'2026-06-22','PRIHLASEN','03092026',4500.00)
 
 -- ── FAKTURY ─────────────────────────────────────────────────
 -- Faktura za vyjížďku – Lukáš Horák (ID_Prihlasky=1)
@@ -189,35 +189,35 @@ INSERT INTO "Faktury"
   ("ID_Prihlasky","Typ_Faktury","Cislo_Faktury","Castka",
    "Datum_Vystaveni","Datum_Splatnosti","Uhrazeno","Variabilni_Symbol")
 VALUES (3,'ZALOHOVA','FAK-2026-004',1000.00,
-        '2026-06-20','2026-08-01',1,'140520122026')
+        '2026-06-20','2026-08-01',1,'14052026')
 
 -- Doplatek – Dětský víkend, Adam Novák (ID_Prihlasky=3)
 INSERT INTO "Faktury"
   ("ID_Prihlasky","Typ_Faktury","Cislo_Faktury","Castka","Castka_Zaplaceno",
    "Datum_Vystaveni","Datum_Splatnosti","Uhrazeno","Variabilni_Symbol")
 VALUES (3,'DOPLATKOVA','FAK-2026-005',2200.00,1000.00,
-        '2026-08-15','2026-09-05',0,'140520122026')
+        '2026-08-15','2026-09-05',0,'14052026')
 
 -- Záloha – Letní tábor, Tereza Batelková (ID_Prihlasky=4)
 INSERT INTO "Faktury"
   ("ID_Prihlasky","Typ_Faktury","Cislo_Faktury","Castka",
    "Datum_Vystaveni","Datum_Splatnosti","Uhrazeno","Variabilni_Symbol")
 VALUES (4,'ZALOHOVA','FAK-2026-006',3000.00,
-        '2026-06-15','2026-05-01',1,'220420102026')
+        '2026-06-15','2026-05-01',1,'22042026')
 
 -- Doplatek – Letní tábor, Tereza Batelková (ID_Prihlasky=4)
 INSERT INTO "Faktury"
   ("ID_Prihlasky","Typ_Faktury","Cislo_Faktury","Castka","Castka_Zaplaceno",
    "Datum_Vystaveni","Datum_Splatnosti","Uhrazeno","Variabilni_Symbol")
 VALUES (4,'DOPLATKOVA','FAK-2026-007',6800.00,3000.00,
-        '2026-06-20','2026-06-30',0,'220420102026')
+        '2026-06-20','2026-06-30',0,'22042026')
 
 -- Záloha – Podzimní prázdniny, Markéta Brázdová (ID_Prihlasky=5)
 INSERT INTO "Faktury"
   ("ID_Prihlasky","Typ_Faktury","Cislo_Faktury","Castka",
    "Datum_Vystaveni","Datum_Splatnosti","Uhrazeno","Variabilni_Symbol")
 VALUES (5,'ZALOHOVA','FAK-2026-008',1500.00,
-        '2026-06-22','2026-09-15',0,'030920112026')
+        '2026-06-22','2026-09-15',0,'03092026')
 
 -- ── DOKUMENTY ────────────────────────────────────────────────
 -- Oskenovaný lékař pro Adama Nováka (ID_Osoby=1, DITE)

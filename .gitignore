@@ -10,3 +10,11 @@ __pycache__/
 # Automatické archivy záloh (ZIP soubory nenahráváme do gitu, aby nezvětšovaly repozitář)
 ZAL/*.zip
 !ZAL/.gitkeep
+
+# Dočasné vygenerované QR kódy
+Dokumenty/qr_faktura_*.png
+
+# Soukromé soubory s přístupovými údaji
+Github.txt
+*.token
+
