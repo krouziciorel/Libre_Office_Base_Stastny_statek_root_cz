@@ -1,6 +1,6 @@
 -- ============================================================
--- ŠŤASTNÝ STATEK – kompletní schéma databáze
--- LibreOffice Base 26.2 / Firebird 3 (embedded)
+-- ŠŤASTNÝ STATEK – kompletní schéma databáze (Verze 2.6)
+-- LibreOffice Base / Firebird 3+ (embedded)
 --
 -- DŮLEŽITÉ: Vkládejte KAŽDÝ blok mezi oddělovači (---) zvlášť!
 -- Postup: Nástroje → SQL → vložit blok → Provést → smazat → další blok
@@ -25,7 +25,7 @@ CREATE TABLE "Dodavatele" (
   "Cislo_Uctu"      VARCHAR(50),
   "IBAN"            VARCHAR(50),
   "Logo_Cesta"      VARCHAR(500)
-)
+);
 
 -- BLOK 2 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Zakaznici" (
@@ -40,7 +40,7 @@ CREATE TABLE "Zakaznici" (
   "ICO"             VARCHAR(20),
   "DIC"             VARCHAR(20),
   "Poznamka"        VARCHAR(500)
-)
+);
 
 -- BLOK 3 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Deti" (
@@ -58,7 +58,7 @@ CREATE TABLE "Deti" (
   "Poznamka"              VARCHAR(500),
   CONSTRAINT "FK_Deti_Rodic" FOREIGN KEY ("ID_Rodic")
     REFERENCES "Zakaznici"("ID_Zakaznika") ON DELETE CASCADE
-)
+);
 
 -- BLOK 4 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Praktikanti" (
@@ -72,7 +72,7 @@ CREATE TABLE "Praktikanti" (
   "Mesto"           VARCHAR(50),
   "PSC"             VARCHAR(10),
   "Poznamka"        VARCHAR(500)
-)
+);
 
 -- BLOK 5 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Akce" (
@@ -86,8 +86,9 @@ CREATE TABLE "Akce" (
   "Zalohova_Castka"  DECIMAL(10,2),
   "Zalohova_Spl"     DATE,
   "Poznamka"         VARCHAR(500),
-  "Aktivni"          SMALLINT DEFAULT 1
-)
+  "Aktivni"          SMALLINT DEFAULT 1,
+  CONSTRAINT "CHK_AKCE_TYP" CHECK ("Typ_Akce" IN ('LETNI_TABOR', 'DETSKY_VIKEND', 'PODZIMNI_PRAZDNINY', 'VYJIZDKA', 'BALICEK', 'BALICEK_1D', 'BALICEK_2D'))
+);
 
 -- BLOK 6 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Praktikanti_Akce" (
@@ -98,7 +99,7 @@ CREATE TABLE "Praktikanti_Akce" (
     REFERENCES "Praktikanti"("ID_Praktikanta") ON DELETE CASCADE,
   CONSTRAINT "FK_PrakAkce_Akce" FOREIGN KEY ("ID_Akce")
     REFERENCES "Akce"("ID_Akce") ON DELETE CASCADE
-)
+);
 
 -- BLOK 7 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Prihlasky" (
@@ -110,14 +111,18 @@ CREATE TABLE "Prihlasky" (
   "Stav"              VARCHAR(15) DEFAULT 'PRIHLASEN',
   "Variabilni_Symbol" VARCHAR(20),
   "Cena_Celkem"       DECIMAL(10,2),
+  "Bezinfekcnost"     SMALLINT DEFAULT 0,
+  "Datum_Bezinf"      DATE,
   "Poznamka"          VARCHAR(500),
   CONSTRAINT "FK_Prih_Akce" FOREIGN KEY ("ID_Akce")
-    REFERENCES "Akce"("ID_Akce") ON DELETE CASCADE,
+    REFERENCES "Akce"("ID_Akce") ON DELETE NO ACTION,
   CONSTRAINT "FK_Prih_Zak" FOREIGN KEY ("ID_Zakaznika")
-    REFERENCES "Zakaznici"("ID_Zakaznika") ON DELETE CASCADE,
+    REFERENCES "Zakaznici"("ID_Zakaznika") ON DELETE NO ACTION,
   CONSTRAINT "FK_Prih_Dite" FOREIGN KEY ("ID_Ditete")
-    REFERENCES "Deti"("ID_Ditete") ON DELETE SET NULL
-)
+    REFERENCES "Deti"("ID_Ditete") ON DELETE SET NULL,
+  CONSTRAINT "CHK_PRIH_STAV" CHECK ("Stav" IN ('POTVRZEN', 'NAHRADNIK', 'STORNO', 'PRIHLASEN')),
+  CONSTRAINT "CHK_PRIH_VS" CHECK (CHAR_LENGTH("Variabilni_Symbol") <= 10)
+);
 
 -- BLOK 8 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Faktury" (
@@ -134,8 +139,11 @@ CREATE TABLE "Faktury" (
   "Variabilni_Symbol" VARCHAR(20),
   "Poznamka"          VARCHAR(500),
   CONSTRAINT "FK_Fakt_Prih" FOREIGN KEY ("ID_Prihlasky")
-    REFERENCES "Prihlasky"("ID_Prihlasky") -- Ochrana: faktury se nesmí mazat kaskádově, aby nedošlo ke ztrátě účetní historie!
-)
+    REFERENCES "Prihlasky"("ID_Prihlasky") ON DELETE NO ACTION,
+  CONSTRAINT "UQ_FAKT_PRIH_TYP" UNIQUE ("ID_Prihlasky", "Typ_Faktury"),
+  CONSTRAINT "CHK_FAKT_TYP" CHECK ("Typ_Faktury" IN ('ZALOHOVA', 'DOPLATKOVA', 'CELKOVA')),
+  CONSTRAINT "CHK_FAKT_VS" CHECK (CHAR_LENGTH("Variabilni_Symbol") <= 10)
+);
 
 -- BLOK 9 / 9 ─────────────────────────────────────────────────
 CREATE TABLE "Dokumenty" (
@@ -150,4 +158,4 @@ CREATE TABLE "Dokumenty" (
   "Poznamka"        VARCHAR(300),
   CONSTRAINT "FK_Dok_Prih" FOREIGN KEY ("ID_Prihlasky")
     REFERENCES "Prihlasky"("ID_Prihlasky") ON DELETE SET NULL
-)
+);

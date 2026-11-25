@@ -1,15 +1,16 @@
 # Programátorská a administrátorská dokumentace – Šťastný statek
 
-> **Verze dokumentu:** 2.5 (Technická a vývojářská specifikace)  
+> **Verze dokumentu:** 2.6 (Technická a vývojářská specifikace)  
+> **Datum vydání:** Listopad 2026  
 > **Určeno pro:** Vývojáře databázových aplikací LibreOffice, správce systémů a systémové integrátory  
-> **Technologie:** LibreOffice Base 26+ (StarBasic / UNO API), Firebird 3.0 Embedded, Python 3.10+, ODF 1.3  
+> **Technologie:** LibreOffice Base 26+ (StarBasic / UNO API), Firebird 3.0+ Embedded, Python 3.10+, ODF 1.3  
 > **Umístění projektu:** `Libre_Office_Base/` a přenosový balíček `Libre_Office_Base_presun/`
 
 ---
 
 ## 1. Architektura a systémové komponenty
 
-Systém je koncipován jako plně autonomní databázová aplikace typu **Desktop DBMS** běžící na OpenDocument standardu (ODF 1.3 / ISO 26300). Nevyžaduje instalaci samostatného databázového démona; veškeré databázové struktury, aplikační logika a vizuální formuláře jsou zapouzdřeny v souboru `.odb`.
+Systém je koncipován jako plně autonomní databázová aplikace typu **Desktop DBMS** běžící na OpenDocument standardu (ODF 1.3 / ISO 26300). Nevyžaduje instalaci samostatného databázového serveru; veškeré databázové struktury, aplikační logika a vizuální formuláře jsou zapouzdřeny v souboru `.odb`.
 
 ```mermaid
 flowchart TD
@@ -18,20 +19,21 @@ flowchart TD
         F2["F2 - Zákazníci a děti"]
         F3["F3 - Praktikanti"]
         F4["F4 - Akce a turnusy (Filtr + Calc sestavy)"]
-        F5["F5 - Přihlášky a faktury (Filtr + PDF / QR)"]
+        F5["F5 - Přihlášky a faktury (Kontextová tlačítka + Filtr + PDF/QR)"]
     end
 
-    subgraph Logic_Layer["Aplikační a integrační vrstva (v2.5)"]
+    subgraph Logic_Layer["Aplikační a integrační vrstva (v2.6)"]
         UNO["LibreOffice UNO API"]
-        BASIC["StarBasic (Module1.xml - v2.5)"]
+        BASIC["StarBasic (Module1.xml - v2.6)"]
         PY_QR["Python QR Subsystém (scripts/generate_qr.py)"]
-        TEMPLATES["ODS/ODT Šablony (Sablony/)"]
+        TEMPLATES["ODS/ODT Šablony (Sablony/ - dynamický rok)"]
     end
 
-    subgraph DB_Layer["Databázová vrstva (Firebird 3 Embedded)"]
-        ENGINE["libfbembed / Firebird 3.0 Engine"]
-        QUERIES["Dotazy Q1 - Q12 (filtrované bez náhradníků)"]
-        TABLES["Relační tabulky (Akce, Prihlasky, Faktury...)"]
+    subgraph DB_Layer["Databázová vrstva (Firebird Embedded v2.6)"]
+        ENGINE["libfbembed / Firebird Engine"]
+        CONSTRAINTS["Integritní omezení: NO ACTION, CHECK, UNIQUE"]
+        QUERIES["Uložené dotazy Q1 - Q12 (filtrované bez náhradníků)"]
+        TABLES["Relační tabulky (Akce, Prihlasky, Faktury, Deti...)"]
         FILTER_TAB["Pomocná tabulka 'Filtr' (ID=1)"]
     end
 
@@ -40,6 +42,7 @@ flowchart TD
     BASIC --> PY_QR
     BASIC --> TEMPLATES
     BASIC <--> ENGINE
+    ENGINE <--> CONSTRAINTS
     ENGINE <--> QUERIES
     ENGINE <--> TABLES
     ENGINE <--> FILTER_TAB
@@ -55,7 +58,7 @@ flowchart TD
 
 ## 2. Vnitřní struktura kontejneru `.odb`
 
-Soubor `Šťastný_statek.odb` (či `Stastny_statek.odb`) je komprimovaný archiv typu ZIP splňující specifikaci OASIS ODF.
+Soubor `Šťastný_statek.odb` (či `Stastny_statek.odb`) je komprimovaný archiv typu ZIP splňující specifikaci OASIS ODF:
 
 ```text
 Šťastný_statek.odb (ZIP)
@@ -63,12 +66,12 @@ Soubor `Šťastný_statek.odb` (či `Stastny_statek.odb`) je komprimovaný archi
 ├── content.xml                          <- Definice SQL dotazů (Q1-Q12) a datových zdrojů
 ├── settings.xml                         <- Nastavení Base rozhraní
 ├── database/
-│   └── firebird.fbk                     <- Binární záloha/obraz embedded Firebird 3.0
+│   └── firebird.fbk                     <- Binární záloha/obraz embedded Firebird 3+
 ├── Basic/
 │   ├── script-lc.xml                    <- Registr knihoven Basicu
 │   └── Standard/
 │       ├── script-lb.xml                <- Registr modulů knihovny Standard
-│       └── Module1.xml                  <- Kompletní zdrojový kód Basic maker (v2.5)
+│       └── Module1.xml                  <- Kompletní zdrojový kód Basic maker (v2.6)
 ├── forms/
 │   ├── Obj11/                          <- Formulář F1 (Nastavení firmy)
 │   ├── Obj21/                          <- Formulář F2 (Zákazníci a děti)
@@ -76,159 +79,134 @@ Soubor `Šťastný_statek.odb` (či `Stastny_statek.odb`) je komprimovaný archi
 │   ├── Obj41/                          <- Formulář F4 (Akce a turnusy + filtrovací lišta)
 │   └── Obj51/                          <- Formulář F5 (Přihlášky a faktury + filtrovací lišta)
 └── reports/
-    └── Obj11/ až Obj111/                <- Tiskové sestavy systému
+    └── Obj11/ až Obj111/                <- Tiskové sestavy systému (celkem 11 sestav)
 ```
 
 ---
 
-## 3. Databázové schéma DDL (Firebird 3)
+## 3. Databázové schéma a bezpečnostní pravidla (Firebird)
 
-### Pravidla integrity a ochrana účetních dokladů
-Ve verzi 2.5 bylo upraveno omezení cizího klíče `FK_Fakt_Prih` – bylo odstraněno kaskádové mazání (`ON DELETE CASCADE`), aby smazání přihlášky nebo akce nemohlo smazat daňové a účetní doklady.
+Ve verzi 2.6 byla dokončena plná databázová integrita přímo v engine Firebird (`database/firebird.fbk`):
 
-#### Tabulka `Prihlasky`
+### 1. Zrušení kaskádového mazání (ochrana účetních a klientských dat)
+- `FK_Fakt_Prih`: změněno z `ON DELETE CASCADE` na `ON DELETE NO ACTION`. Přihlášku s vystavenými fakturami nelze smazat.
+- `FK_Prih_Akce`: změněno na `ON DELETE NO ACTION`. Akci s existujícími přihláškami nelze smazat.
+- `FK_Prih_Zak`: změněno na `ON DELETE NO ACTION`. Zákazníka s přihláškami nelze smazat.
+
+### 2. Unikátní omezení proti duplicitám faktur
 ```sql
-CREATE TABLE "Prihlasky" (
-  "ID_Prihlasky"      INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-  "ID_Akce"           INTEGER NOT NULL,
-  "ID_Zakaznika"      INTEGER NOT NULL,
-  "ID_Ditete"         INTEGER,
-  "Datum_Prihlasky"   DATE NOT NULL,
-  "Stav"              VARCHAR(20) DEFAULT 'POTVRZEN',
-  "Cena_Celkem"       DECIMAL(10,2) NOT NULL,
-  "Zpusob_Platby"     VARCHAR(50) DEFAULT 'PREVOD',
-  "Variabilni_Symbol" VARCHAR(20),
-  "Poznamka"          VARCHAR(500),
-  "Bezinfekcnost"     SMALLINT DEFAULT 0,
-  "Datum_Bezinf"      DATE,
-  "Urazove_Pojisteni" SMALLINT DEFAULT 0,
-  CONSTRAINT "FK_Prih_Akce" FOREIGN KEY ("ID_Akce") REFERENCES "Akce"("ID_Akce"),
-  CONSTRAINT "FK_Prih_Zak"  FOREIGN KEY ("ID_Zakaznika") REFERENCES "Zakaznici"("ID_Zakaznika"),
-  CONSTRAINT "FK_Prih_Dite" FOREIGN KEY ("ID_Ditete") REFERENCES "Deti"("ID_Ditete")
-);
+ALTER TABLE "Faktury" ADD CONSTRAINT "UQ_FAKT_PRIH_TYP"
+  UNIQUE ("ID_Prihlasky", "Typ_Faktury");
 ```
+Zabraňuje vložení dvou zálohových, dvou doplatkových či dvou celkových faktur ke stejné přihlášce na úrovni databázového jádra.
 
-#### Tabulka `Faktury`
+### 3. Kontrolní omezení CHECK (doménová integrita)
 ```sql
-CREATE TABLE "Faktury" (
-  "ID_Faktury"        INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-  "ID_Prihlasky"      INTEGER NOT NULL,
-  "Typ_Faktury"       VARCHAR(12) NOT NULL,
-  "Cislo_Faktury"     VARCHAR(30) NOT NULL,
-  "Castka"            DECIMAL(10,2) NOT NULL,
-  "Castka_Zaplaceno"  DECIMAL(10,2) DEFAULT 0,
-  "Datum_Vystaveni"   DATE NOT NULL,
-  "Datum_Splatnosti"  DATE NOT NULL,
-  "Datum_Zaplaceno"   DATE,
-  "Uhrazeno"          SMALLINT DEFAULT 0,
-  "Variabilni_Symbol" VARCHAR(20),
-  "Poznamka"          VARCHAR(500),
-  CONSTRAINT "FK_Fakt_Prih" FOREIGN KEY ("ID_Prihlasky")
-    REFERENCES "Prihlasky"("ID_Prihlasky") -- Bez kaskádového mazání (RESTRICT/NO ACTION) pro ochranu účetních záznamů!
-);
-```
+-- Typ akce
+ALTER TABLE "Akce" ADD CONSTRAINT "CHK_AKCE_TYP"
+  CHECK ("Typ_Akce" IN ('LETNI_TABOR', 'DETSKY_VIKEND', 'PODZIMNI_PRAZDNINY', 'VYJIZDKA', 'BALICEK', 'BALICEK_1D', 'BALICEK_2D'));
 
-#### Pomocná tabulka `Filtr`
-```sql
-CREATE TABLE "Filtr" (
-  "ID"         INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-  "ID_Akce"    INTEGER
-);
-INSERT INTO "Filtr" ("ID", "ID_Akce") VALUES (1, NULL);
+-- Stav přihlášky
+ALTER TABLE "Prihlasky" ADD CONSTRAINT "CHK_PRIH_STAV"
+  CHECK ("Stav" IN ('POTVRZEN', 'NAHRADNIK', 'STORNO', 'PRIHLASEN'));
+
+-- Typ faktury
+ALTER TABLE "Faktury" ADD CONSTRAINT "CHK_FAKT_TYP"
+  CHECK ("Typ_Faktury" IN ('ZALOHOVA', 'DOPLATKOVA', 'CELKOVA'));
+
+-- Maximální délka variabilního symbolu pro QR standard SPAYD (ČNB limit 10 číslic)
+ALTER TABLE "Prihlasky" ADD CONSTRAINT "CHK_PRIH_VS"
+  CHECK (CHAR_LENGTH("Variabilni_Symbol") <= 10);
+
+ALTER TABLE "Faktury" ADD CONSTRAINT "CHK_FAKT_VS"
+  CHECK (CHAR_LENGTH("Variabilni_Symbol") <= 10);
 ```
 
 ---
 
-## 4. Aplikační logika v modulu maker (StarBasic v2.5)
+## 4. Aplikační logika v modulu maker (StarBasic v2.6)
 
-Modul `Module1.xml` obsahuje kompletní aplikační logiku:
+Modul `Module1.xml` obsahuje klíčové procedury pro řízení procesů:
 
-### 1. Bezpečné generování faktur (`VytvoritFakturu`)
-Procedura v2.5 implementuje:
-- **Detekci existujících faktur k přihlášce:** dotazuje `SELECT "Typ_Faktury", "Cislo_Faktury", "Castka" FROM "Faktury" WHERE "ID_Prihlasky"=...`. Pokud již záloha nebo doplatek existují, vyvolá interaktivní varování před duplicitou.
-- **Inteligentní výpočet doplatku:** $\text{Doplatek} = \text{Cena celkem} - \sum(\text{Dosud vyfakturováno})$.
-- **Respektování termínu splatnosti zálohy:** přebírá pole `Zalohova_Spl` z tabulky `Akce`.
-- **Splatnost doplatku:** standardně 14 dní před začátkem akce (`Akce.Datum_Od - 14`).
-- **Bezpečné číslování faktur:** zjišťuje `MAX("Cislo_Faktury")` pro daný rok a inkrementuje poslední pořadové číslo namísto nestabilního `COUNT(*)`.
+### 1. Kontextové vystavování faktur (`VytvoritFakturuContext`)
+Procedura zpracovává volání z tlačítek formuláře F5:
+- **Čtení kontextu z události (`oEvent`):** Pokud uživatel stiskne tlačítko v F5, makro detekuje `oForm = oEvent.Source.Model.Parent` a načte `ID_Prihlasky` přímo z aktuálně zobrazeného záznamu. Není nutné otevírat doplňující výběrový dialog.
+- **Zákaz fakturace náhradníků a stornovaných:**
+  ```basic
+  IF sStavPrih = "NAHRADNIK" THEN
+      MsgBox "CHYBA: Přihláška ID " & nIDPrih & " je ve stavu 'NAHRADNIK'. Náhradníkům nelze vystavovat faktury před potvrzením účasti.", 16, "Chyba"
+      EXIT SUB
+  END IF
+  ```
+- **Striktní zákaz duplicitních faktur:**
+  - Při pokusu o druhou zálohu: tvrdý `EXIT SUB` s chybovým hlášením.
+  - Při pokusu o celkovou fakturu k přihlášce s doklady: tvrdý `EXIT SUB`.
+  - Při pokusu o doplatek k plně vyfakturované přihlášce: tvrdý `EXIT SUB`.
+- **Automatická aktualizace UI:** Po provedení zápisu do databáze makro zavolá `oForm.getByName("SubForm").reload()`, čímž se nově vystavená faktura ihned zobrazí v tabulce formuláře F5.
 
+### 2. Pravidla pro splatnost doplatku
 ```basic
-sRok = Format(Year(Date), "0000")
-sSQL = "SELECT ""Cislo_Faktury"" FROM ""Faktury"" WHERE ""Cislo_Faktury"" LIKE '" & sRok & "-%' ORDER BY ""Cislo_Faktury"" DESC"
-oResult = oSt.executeQuery(sSQL)
-nNext = 1
-IF oResult.next() THEN
-    DIM sMaxCislo AS STRING
-    sMaxCislo = oResult.getString(1)
-    DIM nPom AS INTEGER
-    nPom = InStr(sMaxCislo, "-")
-    IF nPom > 0 THEN
-        nNext = VAL(Mid(sMaxCislo, nPom + 1)) + 1
+IF LEN(sDatumOd) >= 10 THEN
+    dDatumOdVal = CDate(sDatumOd)
+    IF dDatumOdVal - Date > 14 THEN
+        sSpl = Format(dDatumOdVal - 14, "YYYY-MM-DD")
+    ELSE
+        sSpl = Format(Date + 14, "YYYY-MM-DD")
     END IF
 END IF
-sCislo = sRok & "-" & Format(nNext, "0000")
 ```
 
-### 2. Generování QR kódů a tisk faktury (`FakturaZID`)
-- **Unikátní název souboru:** QR kód je pro každou fakturu generován do samostatného souboru `Dokumenty/qr_faktura_<Cislo>.png`.
-- **Ověření návratového stavu a existence:** Makro zjišťuje `FileExists(sQrPath)`. Pokud skript selže, je uživatel varován a nevloží se poškozený objekt.
-- **Bezpečný JOIN dodavatele:** Namísto nekontrolovaného `CROSS JOIN` používá `LEFT JOIN "Dodavatele" dd ON dd."ID_Dodavatele"=1`.
+### 3. Číslování faktur (`FAK-RRRR-NNN`)
+Zjišťuje nejvyšší existující číslo v daném roce pomocí `SELECT MAX("Cislo_Faktury")` a inkrementuje pořadové číslo. Formát je jednotný: `FAK-2027-001`, `FAK-2027-002` atd.
 
-### 3. Sjednocení evidence bezinfekčnosti (`OznacitBezinfekcnost`)
-Při označení bezinfekčnosti se hodnota atomicky propíše jak do tabulky `Deti`, tak do všech aktivních přihlášek dítěte v tabulce `Prihlasky`:
-```basic
-oSt.executeUpdate("UPDATE ""Deti"" SET ""Bezinfekcnost""=1,""Datum_Bezinf""='" & sDnes & "' WHERE ""ID_Ditete""=" & nID)
-oSt.executeUpdate("UPDATE ""Prihlasky"" SET ""Bezinfekcnost""=1,""Datum_Bezinf""='" & sDnes & "' WHERE ""ID_Ditete""=" & nID & " AND ""Stav"" NOT IN ('STORNO')")
-```
+### 4. Evidence bezinfekčnosti na konkrétní turnus (`OznacitBezinfekcnost`)
+Bezinfekčnost je vztažena k přihlášce (`Prihlasky.Bezinfekcnost = 1`), nikoliv jako trvalá vlastnost dítěte z minulých let. Datum posledního odevzdání se na kartu dítěte ukládá pouze informativně.
 
 ---
 
-## 5. SQL Dotazy a tiskové sestavy (content.xml)
+## 5. Uložené SQL dotazy v `content.xml`
 
-Všechny provozní dotazy vylučují stornované přihlášky i náhradníky:
-
-1. **`Q3_Seznam_Ucastniku`:**
-   ```sql
-   WHERE "Prihlasky"."Stav" NOT IN ('STORNO', 'NAHRADNIK')
-   ```
-2. **`Q4_Kooperativa` (nepojištěné děti pro pojišťovnu):**
-   ```sql
-   WHERE ("Deti"."Urazove_Pojisteni" = 0 OR "Deti"."Urazove_Pojisteni" IS NULL)
-     AND "Prihlasky"."Stav" NOT IN ('STORNO', 'NAHRADNIK')
-     AND ("Filtr"."ID_Akce" IS NULL OR "Akce"."ID_Akce" = "Filtr"."ID_Akce")
-   ```
+1. **`Q3_Seznam_Ucastniku`:** Vylučuje `STORNO` i `NAHRADNIK`.
+2. **`Q4_Kooperativa`:** Vylučuje děti s úrazovým pojištěním a vylučuje `STORNO` i `NAHRADNIK`.
 3. **`Q5_Bez_Bezinfekcnosti`:**
    ```sql
-   WHERE (COALESCE("Prihlasky"."Bezinfekcnost", 0) = 0 AND COALESCE("Deti"."Bezinfekcnost", 0) = 0)
+   WHERE COALESCE("Prihlasky"."Bezinfekcnost", 0) = 0
      AND "Prihlasky"."Stav" NOT IN ('STORNO', 'NAHRADNIK')
      AND ("Filtr"."ID_Akce" IS NULL OR "Akce"."ID_Akce" = "Filtr"."ID_Akce")
    ```
-4. **`Q6_Nezaplacene_Zalohy` a `Q7_Nezaplacene_Doplatky`:**
-   Dotaz vybírá dosud neuhrazené faktury daného typu seřazené vzestupně podle data splatnosti (`ORDER BY "Faktury"."Datum_Splatnosti"`).
-5. **`Q10_Obsazenost_Akce`:**
-   Počítá obsazenost podle potvrzených přihlášek a odečítá od kapacity turnusu:
-   ```sql
-   ("Akce"."Kapacita" - COUNT("Prihlasky"."ID_Prihlasky")) AS "Volna_Mista"
-   ```
+4. **`Q6_Nezaplacene_Zalohy` a `Q7_Nezaplacene_Doplatky`:** Seřazení podle data splatnosti vzestupně.
+5. **`Q8_Prehled_Prijmu`:** Zahrnuje plně uhrazené faktury (`Uhrazeno = 1`) s reálnou částkou.
+6. **`Q9_Rodice_Dle_Turnusu`:** Adresář rodičů potvrzených účastníků (vylučuje `STORNO` a `NAHRADNIK`).
+7. **`Q10_Obsazenost_Akce`:** Výpočet volných míst odečtením aktivních přihlášek od kapacity.
 
 ---
 
-## 6. Python QR generátor (SPAYD Standard)
+## 6. Přehled tiskových sestav (11 sestav)
 
-Skript `scripts/generate_qr.py` je čistě pythonovská implementace (bez PIL a binárních C-rozšíření) zapisující PNG matici přímo pomocí `zlib` a `struct`:
-- **Kompatibilita:** Běží v nativním prostředí i ve Flatpak sandboxu.
-- **Validace VS:** Limitováno na max. 10 číslic dle specifikace ČNB (`X-VS:0-9{1,10}`).
+Systém disponuje 11 registrovanými sestavami:
+1. `rpt_Obsazenost_Calc`
+2. `rpt_Kooperativa_Calc`
+3. `rpt_BezBezinfekcnosti_Calc`
+4. `rpt_Nahradnici_Calc`
+5. `rpt_NezaplaceneZalohy_Calc`
+6. `rpt_NezaplaceneDoplatky_Calc`
+7. `rpt_PrehledPrijmu_Calc`
+8. `rpt_Praktikanti_Calc`
+9. `rpt_Upozorneni_Rodice_Calc`
+10. `rpt_SeznamUcastniku_Writer` (oficiální formátovaná nástupní listina)
+11. `rpt_SeznamUcastniku_Calc` (tabulkový export účastníků do Calcu)
 
 ---
 
 ## 7. Administrátorské postupy a zálohování
 
 ### Zálohovací skript `zalohovat.sh`
-- Automaticky detekuje soubor `Šťastný_statek.odb` i `Stastny_statek.odb`.
-- Generuje ZIP archiv do složky `ZAL/` s časovým razítkem:
+- Skript vytváří ZIP archiv v adresáři `ZAL/` s časovým razítkem:
   `Zaloha_Stastny_statek_YYYY-MM-DD_hh-mm-ss.zip`.
 - Aktualizuje čistou kopii do složky `ZAL/latest/`.
+- Makro `ZalohovatData()` v LibreOffice po dokončení zkontroluje fyzickou existenci výsledného souboru a informuje uživatele.
 
 ### Obnova databáze
 1. Ukončit veškeré procesy LibreOffice (`killall soffice.bin`).
-2. Nahradit soubor `.odb` v kořenovém adresáři souborem z `ZAL/latest/` nebo rozbaleného archivu.
-3. Spustit LibreOffice Base a zkontrolovat integritu dat.
+2. Nahradit soubor `.odb` v kořenovém adresáři souborem ze složky `ZAL/latest/` nebo rozbaleného archivu.
+3. Spustit aplikaci v LibreOffice Base. Veškeré vazby a data jsou okamžitě plně funkční.
