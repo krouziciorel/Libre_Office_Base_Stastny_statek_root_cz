@@ -1,6 +1,7 @@
 ' ==============================================================================
 ' Modul maker v2.7 - Aktualizované a opravené procedury pro Šťastný statek
-' (Verze 2.7: finanční integrita, slevy v DB, jedinečný VS, tlačítko bezinfekčnosti)
+' (Verze 2.7: finanční triggery, slevy v DB, jedinečný VS, tlačítko bezinfekčnosti,
+'  oprava com.sun.star.lang.DisposedException bezpečným oddělením SQL ResultSets)
 ' ==============================================================================
 
 FUNCTION GetBaseFolder() AS STRING
@@ -78,8 +79,8 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
     DIM sMsg AS STRING
     DIM oForm AS OBJECT
 
-    ' Proměnné pro kontrolu již vystavených faktur k přihlášce (ochrana před duplicitami a nesprávnými kombinacemi)
     DIM sExSQL AS STRING
+    DIM oStEx AS OBJECT
     DIM oExRes AS OBJECT
     DIM nCountZal AS INTEGER, nCountDop AS INTEGER, nCountCelk AS INTEGER
     DIM dFakturovanoZal AS DOUBLE, dFakturovanoCelk AS DOUBLE
@@ -125,6 +126,8 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
     oResult = oSt.executeQuery(sSQL)
     IF NOT oResult.next() THEN
         MsgBox "Přihláška ID " & nIDPrih & " neexistuje.", 16, "Chyba"
+        oResult.close()
+        oSt.close()
         EXIT SUB
     END IF
 
@@ -138,6 +141,8 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
     sDatumOd   = DateFromSQL(oResult.getString(5))
     sStavPrih  = Trim(UCase(oResult.getString(6)))
     ON ERROR GOTO 0
+    oResult.close()
+    oSt.close()
 
     ' Kontrola stavu přihlášky: náhradníkům a stornovaným nelze vystavovat faktury
     IF sStavPrih = "NAHRADNIK" THEN
@@ -158,7 +163,7 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
         EXIT SUB
     END IF
 
-    ' Kontrola stávajících vystavených faktur k této přihlášce
+    ' Kontrola stávajících vystavených faktur k této přihlášce (samostatný Statement)
     nCountZal = 0
     nCountDop = 0
     nCountCelk = 0
@@ -168,8 +173,9 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
     sPosledniFakDop = ""
     sPosledniFakCelk = ""
 
+    oStEx = oConn.createStatement()
     sExSQL = "SELECT ""Typ_Faktury"", ""Cislo_Faktury"", ""Castka"" FROM ""Faktury"" WHERE ""ID_Prihlasky""=" & nIDPrih
-    oExRes = oSt.executeQuery(sExSQL)
+    oExRes = oStEx.executeQuery(sExSQL)
     DO WHILE oExRes.next()
         DIM sTF AS STRING, sCF AS STRING, dCF AS DOUBLE
         sTF = oExRes.getString(1)
@@ -188,6 +194,8 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
             sPosledniFakCelk = sCF
         END IF
     LOOP
+    oExRes.close()
+    oStEx.close()
 
     sDnes = Format(Date, "YYYY-MM-DD")
     sSpl  = Format(Date + 14, "YYYY-MM-DD")
@@ -264,25 +272,32 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
 
     ' Číslování faktur: formát FAK-RRRR-NNN
     sRok = Format(Year(Date), "0000")
+    DIM oStNum AS OBJECT, oResNum AS OBJECT
+    oStNum = oConn.createStatement()
     sSQL = "SELECT MAX(""Cislo_Faktury"") FROM ""Faktury"" WHERE ""Cislo_Faktury"" LIKE 'FAK-" & sRok & "-%'"
-    oResult = oSt.executeQuery(sSQL)
+    oResNum = oStNum.executeQuery(sSQL)
     nNext = 1
-    IF oResult.next() THEN
+    IF oResNum.next() THEN
         DIM sMaxCislo AS STRING
-        sMaxCislo = oResult.getString(1)
+        sMaxCislo = oResNum.getString(1)
         IF LEN(sMaxCislo) >= 12 THEN
             nNext = VAL(Mid(sMaxCislo, 10)) + 1
         END IF
     END IF
+    oResNum.close()
+    oStNum.close()
     sCislo = "FAK-" & sRok & "-" & Format(nNext, "000")
 
+    DIM oStIns AS OBJECT
+    oStIns = oConn.createStatement()
     sIns = "INSERT INTO ""Faktury"""
     sIns = sIns & " (""ID_Prihlasky"",""Typ_Faktury"",""Cislo_Faktury"","
     sIns = sIns & """Castka"",""Castka_Zaplaceno"",""Datum_Vystaveni"",""Datum_Splatnosti"","
     sIns = sIns & """Uhrazeno"",""Variabilni_Symbol"")"
     sIns = sIns & " VALUES (" & nIDPrih & ",'" & sTypFaktury & "','" & sCislo & "',"
     sIns = sIns & Replace(Format(dCastka, "0.00"), ",", ".") & ",0,'" & sDnes & "','" & sSpl & "',0,'" & sVS & "')"
-    oSt.executeUpdate(sIns)
+    oStIns.executeUpdate(sIns)
+    oStIns.close()
 
     ' Automatický reload podformuláře Faktury ve formuláři F5
     IF NOT IsMissing(oEvent) AND NOT IsNull(oEvent) THEN
@@ -295,10 +310,14 @@ SUB VytvoritFakturuContext(sTypFaktury AS STRING, OPTIONAL oEvent AS OBJECT)
         ON ERROR GOTO 0
     END IF
 
+    DIM oStGetID AS OBJECT, oResGetID AS OBJECT
+    oStGetID = oConn.createStatement()
     sSQL = "SELECT ""ID_Faktury"" FROM ""Faktury"" WHERE ""Cislo_Faktury""='" & sCislo & "'"
-    oResult = oSt.executeQuery(sSQL)
+    oResGetID = oStGetID.executeQuery(sSQL)
     nIDFak = 0
-    IF oResult.next() THEN nIDFak = oResult.getLong(1)
+    IF oResGetID.next() THEN nIDFak = oResGetID.getLong(1)
+    oResGetID.close()
+    oStGetID.close()
 
     sMsg = "Faktura " & sCislo & " (" & Format(dCastka,"#,##0.00") & " Kč) byla úspěšně vytvořena!"
     sMsg = sMsg & Chr(13) & "Datum splatnosti: " & sSpl
@@ -330,6 +349,8 @@ SUB GenerovatCisloFaktury()
             nNext = VAL(Mid(sMaxCislo, 10)) + 1
         END IF
     END IF
+    oResult.close()
+    oSt.close()
 
     MsgBox "Příští číslo faktury: FAK-" & sRok & "-" & Format(nNext, "000"), 64, "Šťastný statek"
 END SUB
@@ -423,7 +444,6 @@ FUNCTION VybratPrihlaskuSeznamu(sTitle AS STRING) AS LONG
     sSQL = sSQL & " LEFT JOIN " & Chr(34) & "Deti" & Chr(34) & " d"
     sSQL = sSQL & " ON p." & Chr(34) & "ID_Ditete" & Chr(34) & "=d." & Chr(34) & "ID_Ditete" & Chr(34)
     
-    ' Pro fakturaci vylučujeme STORNO i NAHRADNIK; pro tisk vylučujeme STORNO
     IF InStr(LCase(sTitle), "faktur") > 0 OR InStr(LCase(sTitle), "vystavit") > 0 THEN
         sSQL = sSQL & " WHERE p." & Chr(34) & "Stav" & Chr(34) & " NOT IN ('STORNO', 'NAHRADNIK')"
     ELSE
@@ -441,6 +461,7 @@ FUNCTION VybratPrihlaskuSeznamu(sTitle AS STRING) AS LONG
     ON ERROR GOTO 0
     IF ISNULL(oRes) OR ISEMPTY(oRes) THEN
         MsgBox "Chyba při načítání přihlášek.", 16, "Chyba"
+        oSt.close()
         VybratPrihlaskuSeznamu = 0
         EXIT FUNCTION
     END IF
@@ -457,6 +478,8 @@ FUNCTION VybratPrihlaskuSeznamu(sTitle AS STRING) AS LONG
         aIDs(nCount) = oRes.getLong(1)
         nCount = nCount + 1
     LOOP
+    oRes.close()
+    oSt.close()
 
     IF nCount = 0 THEN
         MsgBox "Žádné vyhovující přihlášky nebyly nalezeny.", 48, sTitle
@@ -568,11 +591,58 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
     oResult = oSt.executeQuery(sSQL)
     IF NOT oResult.next() THEN
         MsgBox "Přihláška ID " & nIDPrih & " nebyla nalezena.", 16, "Chyba"
+        oResult.close()
+        oSt.close()
         EXIT SUB
     END IF
 
-    DIM sTypAkcePrih AS STRING
+    ' --- Načtení všech hodnot do lokálních proměnných IHNED po executeQuery ---
+    DIM sPrihVS AS STRING, dPrihCena AS DOUBLE
+    DIM sAkceNazev AS STRING, sTypAkcePrih AS STRING, sAkceDatumOd AS STRING, sAkceDatumDo AS STRING, dAkceZaloha AS DOUBLE
+    DIM sZakJmeno AS STRING, sZakPrijmeni AS STRING, sZakUlice AS STRING, sZakMesto AS STRING, sZakPSC AS STRING, sZakTel AS STRING, sZakEmail AS STRING
+    DIM sDiteJmeno AS STRING, sDitePrijmeni AS STRING, sDiteNarozeniRaw AS STRING, sDitePojistovna AS STRING, sDiteCisloPoj AS STRING, sDiteOmezeni AS STRING
+    DIM sDodNazev AS STRING, sDodUlice AS STRING, sDodMesto AS STRING, sDodICO AS STRING, sDodTel AS STRING, sDodEmail AS STRING
+    DIM sPrihPozn AS STRING, sZakPozn AS STRING, sDitePozn AS STRING, sDbPlavec AS STRING, sDbPlatba AS STRING
+    DIM nIDDitetePrih AS LONG, dAkceCena AS DOUBLE
+
+    sPrihVS = oResult.getString(4)
+    dPrihCena = oResult.getDouble(5)
+    sAkceNazev = oResult.getString(6)
     sTypAkcePrih = UCase(Trim(oResult.getString(7)))
+    sAkceDatumOd = oResult.getString(8)
+    sAkceDatumDo = oResult.getString(9)
+    dAkceZaloha = oResult.getDouble(10)
+    sZakJmeno = Trim(oResult.getString(11))
+    sZakPrijmeni = Trim(oResult.getString(12))
+    sZakUlice = oResult.getString(13)
+    sZakMesto = oResult.getString(14)
+    sZakPSC = oResult.getString(15)
+    sZakTel = oResult.getString(16)
+    sZakEmail = oResult.getString(17)
+    sDiteJmeno = Trim(oResult.getString(18))
+    sDitePrijmeni = Trim(oResult.getString(19))
+    sDiteNarozeniRaw = oResult.getString(20)
+    sDitePojistovna = oResult.getString(21)
+    sDiteCisloPoj = oResult.getString(22)
+    sDiteOmezeni = oResult.getString(23)
+    sDodNazev = oResult.getString(24)
+    sDodUlice = oResult.getString(25)
+    sDodMesto = oResult.getString(26)
+    sDodICO = oResult.getString(27)
+    sDodTel = oResult.getString(28)
+    sDodEmail = oResult.getString(29)
+    sPrihPozn = oResult.getString(30)
+    sZakPozn = oResult.getString(31)
+    sDitePozn = oResult.getString(32)
+    sDbPlavec = UCase(Trim(oResult.getString(33)))
+    sDbPlatba = UCase(Trim(oResult.getString(34)))
+    nIDDitetePrih = oResult.getLong(35)
+    dAkceCena = oResult.getDouble(36)
+
+    ' Uzavření oResult a oSt - zamezí com.sun.star.lang.DisposedException
+    oResult.close()
+    oSt.close()
+
     IF sTypAkcePrih = "BALICEK" OR sTypAkcePrih = "BALICEK_1D" OR sTypAkcePrih = "BALICEK_2D" OR sTypAkcePrih = "VYJIZDKA" THEN
         MsgBox "Pro balíčky u koní a vyjížďky na koni se přihlášky nevystavují (vystavují se pouze faktury).", 64, "Informace"
         EXIT SUB
@@ -595,33 +665,30 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
         EXIT SUB
     END IF
 
-    sJm = oResult.getString(18) & " " & oResult.getString(19)
-    IF TRIM(sJm) = "" THEN sJm = oResult.getString(11) & " " & oResult.getString(12)
+    sJm = sDiteJmeno & " " & sDitePrijmeni
+    IF TRIM(sJm) = "" THEN sJm = sZakJmeno & " " & sZakPrijmeni
 
-    sPoj = oResult.getString(21)
+    sPoj = sDitePojistovna
     IF sPoj = "" THEN sPoj = "(nezadáno)"
 
-    sZdr = oResult.getString(23)
+    sZdr = sDiteOmezeni
     IF sZdr = "" THEN sZdr = "žádné"
 
-    sDatumOd = oResult.getString(8)
-    sDatumDo = oResult.getString(9)
+    sDatumOd = sAkceDatumOd
+    sDatumDo = sAkceDatumDo
     IF LEN(TRIM(sDatumDo)) >= 10 AND sDatumDo <> sDatumOd THEN
         sTermin = DateFromSQL(sDatumOd) & " – " & DateFromSQL(sDatumDo)
     ELSE
         sTermin = DateFromSQL(sDatumOd)
     END IF
 
-    sRodicJmeno = Trim(oResult.getString(11))
-    sRodicPrijmeni = Trim(oResult.getString(12))
+    sRodicJmeno = sZakJmeno
+    sRodicPrijmeni = sZakPrijmeni
     sRodicJm = sRodicJmeno & " " & sRodicPrijmeni
-    sRodicTel = oResult.getString(16)
-    sRodicEmail = oResult.getString(17)
+    sRodicTel = sZakTel
+    sRodicEmail = sZakEmail
 
-    sNotes = ""
-    ON ERROR RESUME NEXT
-    sNotes = UCase(Trim(oResult.getString(23) & " " & oResult.getString(30) & " " & oResult.getString(31) & " " & oResult.getString(32)))
-    ON ERROR GOTO 0
+    sNotes = UCase(Trim(sDiteOmezeni & " " & sPrihPozn & " " & sZakPozn & " " & sDitePozn))
 
     ' Rozpoznání matka vs otec
     bIsMother = FALSE
@@ -647,14 +714,6 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
         sOtecJm = sRodicJm
         sOtecTel = sRodicTel
     END IF
-
-    DIM sDbPlavec AS STRING, sDbPlatba AS STRING
-    sDbPlavec = ""
-    sDbPlatba = ""
-    ON ERROR RESUME NEXT
-    sDbPlavec = UCase(Trim(oResult.getString(33)))
-    sDbPlatba = UCase(Trim(oResult.getString(34)))
-    ON ERROR GOTO 0
 
     ' Plavecké schopnosti dítěte (nevolíme částečného plavce automaticky, pokud není zadán)
     sPlavecP = "☐"
@@ -687,23 +746,12 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
     END IF
 
     sDnes = Format(Now, "d. m. yyyy")
-    DIM nIDDitetePrih AS LONG
-    DIM dAkceCena AS DOUBLE
-    DIM dPrihCena AS DOUBLE
     DIM bStavajiciZakaznik AS BOOLEAN
     DIM sZakaznikN AS STRING, sZakaznikS AS STRING
     DIM sCenaNova AS STRING, sCenaSleva AS STRING
     DIM sCenaVysledna AS STRING
     DIM dSleva AS DOUBLE, sDuvodSlevy AS STRING, dVyslednaCena AS DOUBLE
 
-    nIDDitetePrih = 0
-    dAkceCena = 0
-    ON ERROR RESUME NEXT
-    nIDDitetePrih = oResult.getLong(35)
-    dAkceCena = oResult.getDouble(36)
-    ON ERROR GOTO 0
-
-    dPrihCena = oResult.getDouble(5)
     IF dAkceCena <= 0 THEN dAkceCena = dPrihCena
 
     IF dAkceCena <= 0 THEN
@@ -730,7 +778,9 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
                     bStavajiciZakaznik = TRUE
                 END IF
             END IF
+            oResHist.close()
         END IF
+        oStHist.close()
         ON ERROR GOTO 0
     END IF
 
@@ -753,7 +803,9 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
         dVyslednaCena = dAkceCena
     END IF
 
-    ' Uložení základní ceny, slevy a konečné ceny do databáze Prihlasky (zamezí nesouladu s fakturami)
+    ' Uložení základní ceny, slevy a konečné ceny do databáze Prihlasky (samostatný Statement)
+    DIM oStUpd AS OBJECT
+    oStUpd = oConn.createStatement()
     DIM sUpdPrih AS STRING
     sUpdPrih = "UPDATE ""Prihlasky"" SET ""Cena_Zakladni""=" & Replace(Format(dAkceCena, "0.00"), ",", ".") & _
                ", ""Sleva""=" & Replace(Format(dSleva, "0.00"), ",", ".") & _
@@ -765,13 +817,14 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
     END IF
     sUpdPrih = sUpdPrih & " WHERE ""ID_Prihlasky""=" & nIDPrih
     ON ERROR RESUME NEXT
-    oSt.executeUpdate(sUpdPrih)
+    oStUpd.executeUpdate(sUpdPrih)
+    oStUpd.close()
     ON ERROR GOTO 0
 
-    ' Nastavení UserFields v dokumentu
+    ' Nastavení UserFields v dokumentu pomocí lokálních proměnných
     SetUF oDoc, "PRIHL_DITE_JMENO",      sJm
-    SetUF oDoc, "PRIHL_DITE_NAROZENI",   DateFromSQL(oResult.getString(20))
-    SetUF oDoc, "PRIHL_DITE_ADRESA",     oResult.getString(13) & ", " & oResult.getString(15) & " " & oResult.getString(14)
+    SetUF oDoc, "PRIHL_DITE_NAROZENI",   DateFromSQL(sDiteNarozeniRaw)
+    SetUF oDoc, "PRIHL_DITE_ADRESA",     sZakUlice & ", " & sZakPSC & " " & sZakMesto
     SetUF oDoc, "PRIHL_DITE_POJISTOVNA", sPoj
     SetUF oDoc, "PRIHL_DITE_ZDRAVOTNI",  sZdr
     SetUF oDoc, "PRIHL_RODIC_JMENO",     sRodicJm
@@ -794,12 +847,12 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
     SetUF oDoc, "PRIHL_ZAKAZNIK_N",      sZakaznikN
     SetUF oDoc, "PRIHL_ZAKAZNIK_S",      sZakaznikS
     SetUF oDoc, "PRIHL_DATUM_VYSTAVENI", sDnes
-    SetUF oDoc, "PRIHL_VS",              oResult.getString(4)
-    SetUF oDoc, "DODAVATEL_NAZEV",       oResult.getString(24)
-    SetUF oDoc, "DODAVATEL_ADRESA",      oResult.getString(25) & ", " & oResult.getString(26)
-    SetUF oDoc, "DODAVATEL_ICO",         oResult.getString(27)
-    SetUF oDoc, "DODAVATEL_TEL",         oResult.getString(28)
-    SetUF oDoc, "DODAVATEL_EMAIL",       oResult.getString(29)
+    SetUF oDoc, "PRIHL_VS",              sPrihVS
+    SetUF oDoc, "DODAVATEL_NAZEV",       sDodNazev
+    SetUF oDoc, "DODAVATEL_ADRESA",      sDodUlice & ", " & sDodMesto
+    SetUF oDoc, "DODAVATEL_ICO",         sDodICO
+    SetUF oDoc, "DODAVATEL_TEL",         sDodTel
+    SetUF oDoc, "DODAVATEL_EMAIL",       sDodEmail
 
     RefreshDocument(oDoc)
     oDoc.setModified(FALSE)
@@ -851,8 +904,20 @@ SUB FakturaZID(nIDFak AS LONG)
     oResult = oSt.executeQuery(sSQL)
     IF NOT oResult.next() THEN
         MsgBox "Faktura ID " & nIDFak & " nebyla nalezena.", 16, "Chyba"
+        oResult.close()
+        oSt.close()
         EXIT SUB
     END IF
+
+    ' --- Načtení všech hodnot do lokálních proměnných IHNED po executeQuery ---
+    DIM sZakJm AS STRING, sZakPrijm AS STRING, sZakUl AS STRING, sZakMe AS STRING, sZakPscCode AS STRING
+    DIM sZakIcoVal AS STRING, sZakDicVal AS STRING
+    DIM sDiteJmVal AS STRING, sDitePrijmVal AS STRING
+    DIM sAkceNazevVal AS STRING, sDatOd AS STRING, sDatDo AS STRING
+    DIM sDodNazevVal AS STRING, sDodUlVal AS STRING, sDodMeVal AS STRING, sDodPscVal AS STRING
+    DIM sDodIcoVal AS STRING, sDodDicVal AS STRING, sDodBankaVal AS STRING, sDodUcetVal AS STRING
+    DIM sDodIbanVal AS STRING, sDodTelVal AS STRING, sDodEmailVal AS STRING
+    DIM sAkceTypVal AS STRING, sPrihPlatbaVal AS STRING
 
     sCislo = oResult.getString(2)
     sTyp = oResult.getString(3)
@@ -860,10 +925,35 @@ SUB FakturaZID(nIDFak AS LONG)
     sVS = oResult.getString(5)
     sDnes = DateFromSQL(oResult.getString(6))
     sSpl = DateFromSQL(oResult.getString(7))
-    DIM sDatOd AS STRING
-    DIM sDatDo AS STRING
+    sZakJm = oResult.getString(8)
+    sZakPrijm = oResult.getString(9)
+    sZakUl = oResult.getString(10)
+    sZakMe = oResult.getString(11)
+    sZakPscCode = oResult.getString(12)
+    sZakIcoVal = oResult.getString(13)
+    sZakDicVal = oResult.getString(14)
+    sDiteJmVal = oResult.getString(15)
+    sDitePrijmVal = oResult.getString(16)
+    sAkceNazevVal = oResult.getString(17)
     sDatOd = DateFromSQL(oResult.getString(18))
     sDatDo = DateFromSQL(oResult.getString(19))
+    sDodNazevVal = oResult.getString(20)
+    sDodUlVal = oResult.getString(21)
+    sDodMeVal = oResult.getString(22)
+    sDodPscVal = oResult.getString(23)
+    sDodIcoVal = oResult.getString(24)
+    sDodDicVal = oResult.getString(25)
+    sDodBankaVal = oResult.getString(26)
+    sDodUcetVal = oResult.getString(27)
+    sDodIbanVal = oResult.getString(28)
+    sDodTelVal = oResult.getString(29)
+    sDodEmailVal = oResult.getString(30)
+    sAkceTypVal = oResult.getString(31)
+    sPrihPlatbaVal = oResult.getString(32)
+
+    oResult.close()
+    oSt.close()
+
     IF LEN(TRIM(sDatDo)) >= 10 AND sDatDo <> sDatOd THEN
         sTermin = sDatOd & " – " & sDatDo
     ELSE
@@ -872,26 +962,26 @@ SUB FakturaZID(nIDFak AS LONG)
 
     IF sTyp = "ZALOHOVA" THEN
         sHeaderTitle = "ZÁLOHOVÁ FAKTURA"
-        sPopis = "Záloha na " & oResult.getString(17) & " (termín: " & sTermin & ")"
-        IF LEN(oResult.getString(15)) > 0 THEN
-            sPopis = sPopis & " – účastník: " & oResult.getString(15) & " " & oResult.getString(16)
+        sPopis = "Záloha na " & sAkceNazevVal & " (termín: " & sTermin & ")"
+        IF LEN(sDiteJmVal) > 0 THEN
+            sPopis = sPopis & " – účastník: " & sDiteJmVal & " " & sDitePrijmVal
         END IF
     ELSEIF sTyp = "CELKOVA" THEN
         sHeaderTitle = "FAKTURA – DAŇOVÝ DOKLAD"
-        sPopis = "Fakturujeme Vám: " & oResult.getString(17) & " (termín: " & sTermin & ")"
-        IF LEN(oResult.getString(15)) > 0 THEN
-            sPopis = sPopis & " – účastník: " & oResult.getString(15) & " " & oResult.getString(16)
+        sPopis = "Fakturujeme Vám: " & sAkceNazevVal & " (termín: " & sTermin & ")"
+        IF LEN(sDiteJmVal) > 0 THEN
+            sPopis = sPopis & " – účastník: " & sDiteJmVal & " " & sDitePrijmVal
         END IF
     ELSE
         sHeaderTitle = "DOPLATKOVÁ FAKTURA"
-        sPopis = "Doplatek na " & oResult.getString(17) & " (termín: " & sTermin & ")"
-        IF LEN(oResult.getString(15)) > 0 THEN
-            sPopis = sPopis & " – účastník: " & oResult.getString(15) & " " & oResult.getString(16)
+        sPopis = "Doplatek na " & sAkceNazevVal & " (termín: " & sTermin & ")"
+        IF LEN(sDiteJmVal) > 0 THEN
+            sPopis = sPopis & " – účastník: " & sDiteJmVal & " " & sDitePrijmVal
         END IF
     END IF
 
     sFormaUhrady = "převodem na účet"
-    IF InStr(UCase(oResult.getString(30)), "HOTOV") > 0 THEN
+    IF InStr(UCase(sPrihPlatbaVal), "HOTOV") > 0 THEN
         sFormaUhrady = "v hotovosti"
     END IF
 
@@ -911,21 +1001,21 @@ SUB FakturaZID(nIDFak AS LONG)
         oSheet.getCellByPosition(1, 1).setString(sHeaderTitle)
         oSheet.getCellByPosition(8, 1).setString(sCislo)
 
-        oSheet.getCellByPosition(1, 4).setString(oResult.getString(20))
-        oSheet.getCellByPosition(1, 5).setString(oResult.getString(21))
-        oSheet.getCellByPosition(1, 6).setString(oResult.getString(23) & " " & oResult.getString(22))
-        oSheet.getCellByPosition(1, 7).setString("IČ: " & oResult.getString(24) & "   DIČ: " & oResult.getString(25))
-        oSheet.getCellByPosition(1, 8).setString("Tel: " & oResult.getString(28) & "   E-mail: " & oResult.getString(29))
+        oSheet.getCellByPosition(1, 4).setString(sDodNazevVal)
+        oSheet.getCellByPosition(1, 5).setString(sDodUlVal)
+        oSheet.getCellByPosition(1, 6).setString(sDodPscVal & " " & sDodMeVal)
+        oSheet.getCellByPosition(1, 7).setString("IČ: " & sDodIcoVal & "   DIČ: " & sDodDicVal)
+        oSheet.getCellByPosition(1, 8).setString("Tel: " & sDodTelVal & "   E-mail: " & sDodEmailVal)
 
-        oSheet.getCellByPosition(1, 11).setString(oResult.getString(26))
-        oSheet.getCellByPosition(1, 12).setString(oResult.getString(27))
-        oSheet.getCellByPosition(1, 13).setString(oResult.getString(28))
+        oSheet.getCellByPosition(1, 11).setString(sDodBankaVal)
+        oSheet.getCellByPosition(1, 12).setString(sDodUcetVal)
+        oSheet.getCellByPosition(1, 13).setString(sDodIbanVal)
 
-        oSheet.getCellByPosition(5, 4).setString(oResult.getString(8) & " " & oResult.getString(9))
-        oSheet.getCellByPosition(5, 5).setString(oResult.getString(10))
-        oSheet.getCellByPosition(5, 6).setString(oResult.getString(12) & " " & oResult.getString(11))
-        IF LEN(oResult.getString(13)) > 0 THEN
-            oSheet.getCellByPosition(5, 7).setString("IČ: " & oResult.getString(13) & "   DIČ: " & oResult.getString(14))
+        oSheet.getCellByPosition(5, 4).setString(sZakJm & " " & sZakPrijm)
+        oSheet.getCellByPosition(5, 5).setString(sZakUl)
+        oSheet.getCellByPosition(5, 6).setString(sZakPscCode & " " & sZakMe)
+        IF LEN(sZakIcoVal) > 0 THEN
+            oSheet.getCellByPosition(5, 7).setString("IČ: " & sZakIcoVal & "   DIČ: " & sZakDicVal)
         END IF
 
         oSheet.getCellByPosition(8, 14).setString(sVS)
@@ -949,15 +1039,13 @@ SUB FakturaZID(nIDFak AS LONG)
         DIM oDrawPage AS OBJECT, oShape AS OBJECT, iShp AS INTEGER
         DIM bQrFound AS BOOLEAN
         
-        sIBAN = oResult.getString(28)
-        sIBAN = Replace(Replace(sIBAN, " ", ""), "-", "")
-        sDitePrijmeni = oResult.getString(16)
-        IF LEN(sDitePrijmeni) = 0 THEN sDitePrijmeni = oResult.getString(9)
+        sIBAN = Replace(Replace(sDodIbanVal, " ", ""), "-", "")
+        sDitePrijmeni = sDitePrijmVal
+        IF LEN(sDitePrijmeni) = 0 THEN sDitePrijmeni = sZakPrijm
         
         sScriptQR = GetBaseFolder() & "scripts/generate_qr.py"
         sQrPath = GetBaseFolder() & "Dokumenty/qr_faktura_" & sCislo & ".png"
 
-        ' Smazání starého obrázku před novým generováním
         IF FileExists(sQrPath) THEN
             ON ERROR RESUME NEXT
             Kill sQrPath
@@ -975,7 +1063,6 @@ SUB FakturaZID(nIDFak AS LONG)
         
         oSheet.getCellByPosition(1, 42).setString("QR platba")
         
-        ' Vložení / aktualizace QR tvaru pouze pokud soubor skutečně existuje
         IF FileExists(sQrPath) THEN
             oDrawPage = oSheet.getDrawPage()
             bQrFound = FALSE
@@ -1014,21 +1101,21 @@ SUB FakturaZID(nIDFak AS LONG)
         SetUF oDoc, "FAK_SPLATNOST",  sSpl
         SetUF oDoc, "FAK_VS",         sVS
         SetUF oDoc, "FAK_CASTKA",     Format(dC, "#,##0.00") & " Kč"
-        SetUF oDoc, "ZAK_JMENO",      oResult.getString(8)
-        SetUF oDoc, "ZAK_PRIJMENI",   oResult.getString(9)
-        SetUF oDoc, "ZAK_ULICE",      oResult.getString(10)
-        SetUF oDoc, "ZAK_MESTO",      oResult.getString(11)
-        SetUF oDoc, "ZAK_PSC",        oResult.getString(12)
+        SetUF oDoc, "ZAK_JMENO",      sZakJm
+        SetUF oDoc, "ZAK_PRIJMENI",   sZakPrijm
+        SetUF oDoc, "ZAK_ULICE",      sZakUl
+        SetUF oDoc, "ZAK_MESTO",      sZakMe
+        SetUF oDoc, "ZAK_PSC",        sZakPscCode
         SetUF oDoc, "FAK_POPIS",       sPopis
-        SetUF oDoc, "DOD_NAZEV",      oResult.getString(20)
-        SetUF oDoc, "DOD_ULICE",      oResult.getString(21)
-        SetUF oDoc, "DOD_MESTO",      oResult.getString(22)
-        SetUF oDoc, "DOD_PSC",        oResult.getString(23)
-        SetUF oDoc, "DOD_ICO",        oResult.getString(24)
-        SetUF oDoc, "DOD_DIC",        oResult.getString(25)
-        SetUF oDoc, "DOD_BANKA",      oResult.getString(26)
-        SetUF oDoc, "DOD_UCET",       oResult.getString(27)
-        SetUF oDoc, "DOD_IBAN",       oResult.getString(28)
+        SetUF oDoc, "DOD_NAZEV",      sDodNazevVal
+        SetUF oDoc, "DOD_ULICE",      sDodUlVal
+        SetUF oDoc, "DOD_MESTO",      sDodMeVal
+        SetUF oDoc, "DOD_PSC",        sDodPscVal
+        SetUF oDoc, "DOD_ICO",        sDodIcoVal
+        SetUF oDoc, "DOD_DIC",        sDodDicVal
+        SetUF oDoc, "DOD_BANKA",      sDodBankaVal
+        SetUF oDoc, "DOD_UCET",       sDodUcetVal
+        SetUF oDoc, "DOD_IBAN",       sDodIbanVal
         SetUF oDoc, "FAK_FORMA_UHRADY", sFormaUhrady
         SetUF oDoc, "FAK_TERMIN",     sTermin
         RefreshDocument(oDoc)
@@ -1084,6 +1171,7 @@ SUB OznacitBezinfekcnost(OPTIONAL oEvent AS OBJECT)
     IF oRes.next() THEN
         nIDDitete = oRes.getLong(1)
     END IF
+    oRes.close()
 
     ' Bezinfekčnost je vázána na konkrétní přihlášku / turnus!
     oSt.executeUpdate("UPDATE ""Prihlasky"" SET ""Bezinfekcnost""=1,""Datum_Bezinf""='" & sDnes & "' WHERE ""ID_Prihlasky""=" & nID)
@@ -1092,6 +1180,7 @@ SUB OznacitBezinfekcnost(OPTIONAL oEvent AS OBJECT)
     IF nIDDitete > 0 THEN
         oSt.executeUpdate("UPDATE ""Deti"" SET ""Datum_Bezinf""='" & sDnes & "' WHERE ""ID_Ditete""=" & nIDDitete)
     END IF
+    oSt.close()
 
     ' Reload formuláře, pokud je otevřen
     IF NOT IsNull(oForm) THEN

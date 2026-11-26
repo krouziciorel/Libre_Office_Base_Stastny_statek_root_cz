@@ -51,6 +51,17 @@ def migrate_firebird(fbk_path, work_dir):
     cur = conn.cursor()
 
     print("   Aplikace SQL změn a integrity...")
+    try:
+        cur.execute('ALTER TRIGGER TRG_CHECK_FAKTURY INACTIVE')
+        conn.commit()
+    except Exception:
+        pass
+    try:
+        cur.execute('ALTER TRIGGER TRG_CHECK_PRIHLASKY INACTIVE')
+        conn.commit()
+    except Exception:
+        pass
+
     # 1. Nové sloupce pro slevy
     try:
         cur.execute('ALTER TABLE "Prihlasky" ADD "Cena_Zakladni" DECIMAL(10,2)')
@@ -205,13 +216,13 @@ def migrate_firebird(fbk_path, work_dir):
           AND "ID_Faktury" <> COALESCE(NEW."ID_Faktury", -1)
         INTO :v_zaloha, :v_doplatek, :v_celkova, :v_sum;
 
-        IF (NEW."Typ_Faktury" = 'CELKOVA' AND (:v_zaloha > 0 OR :v_doplatek > 0)) THEN
+        IF ((INSERTING OR (UPDATING AND OLD."Typ_Faktury" <> NEW."Typ_Faktury")) AND NEW."Typ_Faktury" = 'CELKOVA' AND (:v_zaloha > 0 OR :v_doplatek > 0)) THEN
             EXCEPTION EX_FIN_INTEGRITA 'Nelze vytvorit celkovou fakturu - jiz existuje zalohova nebo doplatkova faktura!';
 
-        IF (NEW."Typ_Faktury" IN ('ZALOHOVA', 'DOPLATKOVA') AND :v_celkova > 0) THEN
+        IF ((INSERTING OR (UPDATING AND OLD."Typ_Faktury" <> NEW."Typ_Faktury")) AND NEW."Typ_Faktury" IN ('ZALOHOVA', 'DOPLATKOVA') AND :v_celkova > 0) THEN
             EXCEPTION EX_FIN_INTEGRITA 'Nelze vytvorit zalohu/doplatek - jiz existuje celkova faktura!';
 
-        IF (NEW."Typ_Faktury" = 'ZALOHOVA' AND :v_doplatek > 0) THEN
+        IF ((INSERTING OR (UPDATING AND OLD."Typ_Faktury" <> NEW."Typ_Faktury")) AND NEW."Typ_Faktury" = 'ZALOHOVA' AND :v_doplatek > 0) THEN
             EXCEPTION EX_FIN_INTEGRITA 'Nelze vystavit zalohovou fakturu po jiz vystavene doplatkove fakture!';
 
         IF (v_cena IS NOT NULL AND (:v_sum + NEW."Castka" > v_cena)) THEN
