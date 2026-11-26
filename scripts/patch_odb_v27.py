@@ -382,7 +382,7 @@ def patch_odb_file(odb_path, bas_updates_path):
             "VytvoritZalohovouFakturu", "VytvoritDoplatkovouFakturu", "VytvoritFakturu",
             "VytvoritFakturuContext", "GenerovatCisloFaktury", "TisknoutPrihlaskuPDF",
             "TisknoutFakturuPDF", "VybratPrihlaskuSeznamu", "PrihlaskaZID", "FakturaZID",
-            "OznacitBezinfekcnost", "ZalohovatData"
+            "OznacitBezinfekcnost", "ZalohovatData", "RefreshDocument"
         ]
 
         for sname in sub_names_to_remove:

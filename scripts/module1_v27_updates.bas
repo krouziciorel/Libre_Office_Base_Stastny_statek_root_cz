@@ -854,7 +854,7 @@ SUB PrihlaskaZID(nIDPrih AS LONG)
     SetUF oDoc, "DODAVATEL_TEL",         sDodTel
     SetUF oDoc, "DODAVATEL_EMAIL",       sDodEmail
 
-    RefreshDocument(oDoc)
+    RefreshDoc(oDoc)
     oDoc.setModified(FALSE)
 
     sMsg = "Přihláška pro " & sJm & " (" & sTermin & ") byla úspěšně připravena."
@@ -1118,7 +1118,7 @@ SUB FakturaZID(nIDFak AS LONG)
         SetUF oDoc, "DOD_IBAN",       sDodIbanVal
         SetUF oDoc, "FAK_FORMA_UHRADY", sFormaUhrady
         SetUF oDoc, "FAK_TERMIN",     sTermin
-        RefreshDocument(oDoc)
+        RefreshDoc(oDoc)
         oDoc.setModified(FALSE)
     END IF
 
@@ -1221,4 +1221,8 @@ SUB ZalohovatData()
 
 ErrZal:
     MsgBox "Chyba při zálohování: " & Error$, 16, "Chyba zálohování"
+END SUB
+
+SUB RefreshDocument(oDoc AS OBJECT)
+    RefreshDoc(oDoc)
 END SUB
