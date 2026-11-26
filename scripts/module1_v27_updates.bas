@@ -961,64 +961,63 @@ SUB FakturaZID(nIDFak AS LONG)
     END IF
 
     IF sTyp = "ZALOHOVA" THEN
-        sHeaderTitle = "ZÁLOHOVÁ FAKTURA"
-        sPopis = "Záloha na " & sAkceNazevVal & " (termín: " & sTermin & ")"
+        sHeaderTitle = "ZÁLOHOVÁ FAKTURA – daňový doklad"
+        sPopis = "Fakturujeme Vám zálohovou platbu za " & sAkceNazevVal & " v termínu " & sTermin & "."
         IF LEN(sDiteJmVal) > 0 THEN
             sPopis = sPopis & " – účastník: " & sDiteJmVal & " " & sDitePrijmVal
         END IF
+        sSablona = "Aktualni_zalohova_faktura_LT.ods"
     ELSEIF sTyp = "CELKOVA" THEN
-        sHeaderTitle = "FAKTURA – DAŇOVÝ DOKLAD"
-        sPopis = "Fakturujeme Vám: " & sAkceNazevVal & " (termín: " & sTermin & ")"
+        sHeaderTitle = "FAKTURA – daňový doklad"
+        sPopis = "Fakturujeme Vám platbu za " & sAkceNazevVal & " v termínu " & sTermin & "."
         IF LEN(sDiteJmVal) > 0 THEN
             sPopis = sPopis & " – účastník: " & sDiteJmVal & " " & sDitePrijmVal
         END IF
+        sSablona = "Aktualni_doplatkova_faktura_LT.ods"
     ELSE
-        sHeaderTitle = "DOPLATKOVÁ FAKTURA"
-        sPopis = "Doplatek na " & sAkceNazevVal & " (termín: " & sTermin & ")"
+        sHeaderTitle = "FAKTURA – daňový doklad"
+        sPopis = "Fakturujeme Vám doplatek za " & sAkceNazevVal & " v termínu " & sTermin & "."
         IF LEN(sDiteJmVal) > 0 THEN
             sPopis = sPopis & " – účastník: " & sDiteJmVal & " " & sDitePrijmVal
         END IF
+        sSablona = "Aktualni_doplatkova_faktura_LT.ods"
     END IF
 
-    sFormaUhrady = "převodem na účet"
+    sFormaUhrady = "převodem"
     IF InStr(UCase(sPrihPlatbaVal), "HOTOV") > 0 THEN
-        sFormaUhrady = "v hotovosti"
+        sFormaUhrady = "hotovost"
+    ELSEIF InStr(UCase(sPrihPlatbaVal), "SLOŽEN") > 0 OR InStr(UCase(sPrihPlatbaVal), "SLOZEN") > 0 THEN
+        sFormaUhrady = "složenka"
     END IF
 
-    sSablona = "Faktura_vzor.ods"
     oDoc = OpenTemplate(sSablona)
     IF ISNULL(oDoc) OR ISEMPTY(oDoc) THEN
-        sSablona = "Faktura_vzor.odt"
-        oDoc = OpenTemplate(sSablona)
+        oDoc = OpenTemplate("Faktura.odt")
     END IF
     IF ISNULL(oDoc) OR ISEMPTY(oDoc) THEN
-        MsgBox "Nelze otevřít šablonu faktury.", 16, "Chyba"
+        MsgBox "Nelze otevřít šablonu faktury (" & sSablona & ").", 16, "Chyba"
         EXIT SUB
     END IF
 
-    IF Right(sSablona, 3) = "ods" THEN
+    IF oDoc.supportsService("com.sun.star.sheet.SpreadsheetDocument") THEN
         oSheet = oDoc.getSheets().getByIndex(0)
-        oSheet.getCellByPosition(1, 1).setString(sHeaderTitle)
+        oSheet.getCellByPosition(0, 0).setString(sHeaderTitle)
+        oSheet.getCellByPosition(4, 1).setString("IČO")
+        oSheet.getCellByPosition(5, 1).setString(sDodIcoVal)
+        oSheet.getCellByPosition(7, 1).setString("Faktura číslo")
         oSheet.getCellByPosition(8, 1).setString(sCislo)
+        oSheet.getCellByPosition(8, 2).setString(sVS)
+        oSheet.getCellByPosition(1, 3).setString(sDodNazevVal)
+        oSheet.getCellByPosition(8, 3).setString("008")
+        oSheet.getCellByPosition(1, 4).setString(sDodUlVal)
+        oSheet.getCellByPosition(1, 5).setString(sDodPscVal & " " & sDodMeVal)
+        oSheet.getCellByPosition(4, 7).setString(sDodDicVal)
 
-        oSheet.getCellByPosition(1, 4).setString(sDodNazevVal)
-        oSheet.getCellByPosition(1, 5).setString(sDodUlVal)
-        oSheet.getCellByPosition(1, 6).setString(sDodPscVal & " " & sDodMeVal)
-        oSheet.getCellByPosition(1, 7).setString("IČ: " & sDodIcoVal & "   DIČ: " & sDodDicVal)
-        oSheet.getCellByPosition(1, 8).setString("Tel: " & sDodTelVal & "   E-mail: " & sDodEmailVal)
+        oSheet.getCellByPosition(2, 10).setString(sZakJm & " " & sZakPrijm)
+        oSheet.getCellByPosition(2, 11).setString(sZakUl)
+        oSheet.getCellByPosition(1, 12).setString(sZakPscCode)
+        oSheet.getCellByPosition(2, 12).setString(sZakMe)
 
-        oSheet.getCellByPosition(1, 11).setString(sDodBankaVal)
-        oSheet.getCellByPosition(1, 12).setString(sDodUcetVal)
-        oSheet.getCellByPosition(1, 13).setString(sDodIbanVal)
-
-        oSheet.getCellByPosition(5, 4).setString(sZakJm & " " & sZakPrijm)
-        oSheet.getCellByPosition(5, 5).setString(sZakUl)
-        oSheet.getCellByPosition(5, 6).setString(sZakPscCode & " " & sZakMe)
-        IF LEN(sZakIcoVal) > 0 THEN
-            oSheet.getCellByPosition(5, 7).setString("IČ: " & sZakIcoVal & "   DIČ: " & sZakDicVal)
-        END IF
-
-        oSheet.getCellByPosition(8, 14).setString(sVS)
         oSheet.getCellByPosition(8, 15).setString(sSpl)
         oSheet.getCellByPosition(8, 16).setString(sFormaUhrady)
         oSheet.getCellByPosition(8, 17).setString(sDnes)
